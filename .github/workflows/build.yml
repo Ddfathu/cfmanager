@@ -1,0 +1,53 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Release/Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repository kode
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Setup JDK 17 (Standar compile Android modern & Jetpack Compose)
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      # 3. Setup Gradle Environment & Cache
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      # 4. Berikan izin eksekusi pada wrapper gradlew & pastikan binary jar terunduh jika belum ada
+      - name: Prepare Gradle Wrapper
+        run: |
+          chmod +x ./gradlew || true
+          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "Downloading gradle-wrapper.jar fallback..."
+            mkdir -p gradle/wrapper
+            curl -sLo gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar || true
+          fi
+
+      # 5. Compile APK menggunakan Gradle Wrapper
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+
+      # 6. Upload hasil compile APK sebagai Artifact GitHub Actions
+      - name: Upload Artifact APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CF-Manager-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
