@@ -1,8 +1,10 @@
 package com.cf.manager.data.api
 
 import com.cf.manager.data.model.*
+import com.google.gson.JsonObject
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -10,6 +12,14 @@ interface WorkerApi {
     @FormUrlEncoded
     @POST("list-workers")
     suspend fun listWorkers(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String): Response<List<String>>
+
+    @FormUrlEncoded
+    @POST("get-worker-code")
+    suspend fun getWorkerCode(
+        @Field("cf_email") email: String,
+        @Field("cf_api_key") apiKey: String,
+        @Field("target_worker") target: String
+    ): Response<ResponseBody>
 
     @FormUrlEncoded
     @POST("deploy-worker")
@@ -24,6 +34,30 @@ interface WorkerApi {
     @POST("delete-worker-cf")
     suspend fun deleteWorker(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("target_worker") target: String): Response<ApiResponse>
 
+    // WORKER CUSTOM DOMAINS / ROUTES
+    @FormUrlEncoded
+    @POST("list-domains")
+    suspend fun listWorkerDomains(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String): Response<List<Any>>
+
+    @FormUrlEncoded
+    @POST("add-domain")
+    suspend fun addWorkerDomain(
+        @Field("cf_email") email: String,
+        @Field("cf_api_key") apiKey: String,
+        @Field("target_worker") target: String,
+        @Field("subdomain") subdomain: String,
+        @Field("main_domain") mainDomain: String,
+        @Field("zone_id") zoneId: String
+    ): Response<ApiResponse>
+
+    @DELETE("delete-domain")
+    suspend fun deleteWorkerDomain(
+        @Query("domain_id") domainId: String,
+        @Header("X-Auth-Email") email: String,
+        @Header("X-Auth-Key") apiKey: String
+    ): Response<JsonObject>
+
+    // WORKER VARS & BINDINGS (TEXT, SECRETS, KV, R2)
     @FormUrlEncoded
     @POST("list-worker-vars")
     suspend fun listWorkerVars(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("target_worker") target: String): Response<List<WorkerVarItem>>
@@ -39,6 +73,33 @@ interface WorkerApi {
         @Field("var_type") type: String
     ): Response<ApiResponse>
 
+    @FormUrlEncoded
+    @POST("put-worker-binding")
+    suspend fun putWorkerBinding(
+        @Field("cf_email") email: String,
+        @Field("cf_api_key") apiKey: String,
+        @Field("target_worker") target: String,
+        @Field("binding_type") type: String, // "kv_namespace" atau "r2_bucket"
+        @Field("binding_name") name: String,
+        @Field("target_id") targetId: String
+    ): Response<ApiResponse>
+
+    @FormUrlEncoded
+    @POST("delete-worker-var")
+    suspend fun deleteWorkerVar(
+        @Field("cf_email") email: String,
+        @Field("cf_api_key") apiKey: String,
+        @Field("target_worker") target: String,
+        @Field("var_name") name: String
+    ): Response<ApiResponse>
+
+    // PAGES
+    @GET("api/projects")
+    suspend fun listPagesProjects(@Header("X-Auth-Email") email: String, @Header("X-Auth-Key") apiKey: String): Response<JsonObject>
+
+    @GET("api/check-subdomain")
+    suspend fun checkSubdomain(@Query("name") name: String): Response<JsonObject>
+
     @POST("api/quick-deploy-pages/{project}")
     suspend fun quickDeployPages(
         @Path("project") project: String,
@@ -47,6 +108,22 @@ interface WorkerApi {
         @Body payload: Map<String, String>
     ): Response<ApiResponse>
 
+    @POST("api/projects/{project}/domains")
+    suspend fun addPagesCustomDomain(
+        @Path("project") project: String,
+        @Header("X-Auth-Email") email: String,
+        @Header("X-Auth-Key") apiKey: String,
+        @Body payload: Map<String, String>
+    ): Response<JsonObject>
+
+    @DELETE("api/projects/{project}")
+    suspend fun deletePagesProject(
+        @Path("project") project: String,
+        @Header("X-Auth-Email") email: String,
+        @Header("X-Auth-Key") apiKey: String
+    ): Response<JsonObject>
+
+    // ZONES & DNS
     @FormUrlEncoded
     @POST("list-zones")
     suspend fun listZones(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String): Response<List<ZoneItem>>
@@ -69,9 +146,24 @@ interface WorkerApi {
     ): Response<ApiResponse>
 
     @FormUrlEncoded
+    @POST("update-dns")
+    suspend fun updateDns(
+        @Field("cf_email") email: String,
+        @Field("cf_api_key") apiKey: String,
+        @Field("zone_id") zoneId: String,
+        @Field("record_id") recordId: String,
+        @Field("dns_type") type: String,
+        @Field("dns_name") name: String,
+        @Field("dns_content") content: String,
+        @Field("dns_ttl") ttl: Int,
+        @Field("dns_proxied") proxied: String
+    ): Response<ApiResponse>
+
+    @FormUrlEncoded
     @POST("delete-dns")
     suspend fun deleteDns(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("zone_id") zoneId: String, @Field("record_id") recordId: String): Response<ApiResponse>
 
+    // SSL
     @FormUrlEncoded
     @POST("update-ssl-settings")
     suspend fun updateSslSettings(
@@ -86,6 +178,7 @@ interface WorkerApi {
     @POST("order-ca-cert")
     suspend fun orderCaCert(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("zone_id") zoneId: String, @Field("ca_type") caType: String): Response<ApiResponse>
 
+    // TUNNEL
     @FormUrlEncoded
     @POST("list-tunnels")
     suspend fun listTunnels(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String): Response<List<TunnelItem>>
@@ -99,6 +192,10 @@ interface WorkerApi {
     suspend fun getTunnelToken(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("tunnel_id") tunnelId: String): Response<ApiResponse>
 
     @FormUrlEncoded
+    @POST("delete-tunnel")
+    suspend fun deleteTunnel(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("tunnel_id") tunnelId: String): Response<ApiResponse>
+
+    @FormUrlEncoded
     @POST("add-tunnel-route")
     suspend fun addTunnelRoute(
         @Field("cf_email") email: String,
@@ -110,13 +207,29 @@ interface WorkerApi {
         @Field("service_url") serviceUrl: String
     ): Response<ApiResponse>
 
+    // EMAIL ROUTING
     @FormUrlEncoded
     @POST("add-email-destination")
     suspend fun addEmailDestination(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("email_address") address: String): Response<ApiResponse>
 
     @FormUrlEncoded
+    @POST("list-email-destinations")
+    suspend fun listEmailDestinations(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String): Response<List<Any>>
+
+    @DELETE("delete-email-destination")
+    suspend fun deleteEmailDestination(
+        @Query("address_id") addressId: String,
+        @Header("X-Auth-Email") email: String,
+        @Header("X-Auth-Key") apiKey: String
+    ): Response<JsonObject>
+
+    @FormUrlEncoded
     @POST("enable-email-routing")
     suspend fun enableEmailRouting(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("zone_id") zoneId: String): Response<ApiResponse>
+
+    @FormUrlEncoded
+    @POST("get-email-catchall")
+    suspend fun getEmailCatchAll(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("zone_id") zoneId: String): Response<JsonObject>
 
     @FormUrlEncoded
     @POST("update-email-catchall")
@@ -129,6 +242,7 @@ interface WorkerApi {
         @Field("catchall_target") target: String
     ): Response<ApiResponse>
 
+    // STORAGE
     @FormUrlEncoded
     @POST("list-kv-namespaces")
     suspend fun listKvNamespaces(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String): Response<List<KvNamespaceItem>>
