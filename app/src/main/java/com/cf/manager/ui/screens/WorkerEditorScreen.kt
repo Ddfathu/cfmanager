@@ -3,6 +3,7 @@ package com.cf.manager.ui.screens
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -17,16 +18,15 @@ import com.cf.manager.data.AppConfig
 import com.cf.manager.data.api.ApiClient
 import com.cf.manager.data.local.AccountStorage
 import com.cf.manager.data.model.ZoneItem
-import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.URL
 
 data class WorkerDomainItem(
-    val id: String,
-    val hostname: String,
-    val service: String
+    val id: String = "",
+    val hostname: String = "",
+    val service: String = ""
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -339,7 +339,7 @@ fun WorkerEditorScreen() {
             }
         }
 
-        // --- 4. SECTION FITUR BARU: DOMAIN & ROUTE WORKER ---
+        // --- 4. CUSTOM DOMAIN & ROUTE WORKER ---
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -448,7 +448,7 @@ fun WorkerEditorScreen() {
                 Text("Domain Terhubung ke '${workerNameInput}':", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             }
 
-            items(matchedDomains) { d ->
+            items(items = matchedDomains, key = { it.id }) { d: WorkerDomainItem ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
