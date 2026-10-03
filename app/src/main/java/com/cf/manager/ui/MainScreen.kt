@@ -4,11 +4,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.cf.manager.data.AppConfig
 import com.cf.manager.data.api.ApiClient
@@ -41,11 +43,18 @@ fun MainScreen() {
     var selectedTab by remember { mutableStateOf(0) }
     val tabTitles = listOf("⚡ Worker", "🔑 Vars", "📄 Pages", "🌐 DNS", "🔒 SSL", "🚇 Tunnel", "✉️ Email", "🗄 Storage", "📊 Stats", "⚙ Akun")
 
-    // State untuk Dialog Tambah Akun Baru
+    // State Dialog Tambah Akun
     var showAddDialog by remember { mutableStateOf(false) }
     var newAlias by remember { mutableStateOf("") }
     var newEmail by remember { mutableStateOf("") }
     var newApiKey by remember { mutableStateOf("") }
+
+    // State Dialog Edit Akun
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editTargetIdx by remember { mutableStateOf(-1) }
+    var editAlias by remember { mutableStateOf("") }
+    var editEmail by remember { mutableStateOf("") }
+    var editApiKey by remember { mutableStateOf("") }
 
     val activeAccount = accounts.getOrElse(activeIdx) { CfAccount(alias = "Default", email = "", apiKey = "") }
 
@@ -60,7 +69,7 @@ fun MainScreen() {
             TopAppBar(
                 title = {
                     Column {
-                        Text("CF Manager", style = MaterialTheme.typography.titleMedium)
+                        Text("CF Manager", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(
                             text = "Akun Aktif: ${activeAccount.alias} (${activeAccount.email.ifBlank { "Belum diisi" }})",
                             style = MaterialTheme.typography.bodySmall,
@@ -71,12 +80,30 @@ fun MainScreen() {
             )
         },
         bottomBar = {
-            ScrollableTabRow(selectedTabIndex = selectedTab) {
-                tabTitles.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = { Text(title) }
+            Column(modifier = Modifier.fillMaxWidth()) {
+                ScrollableTabRow(selectedTabIndex = selectedTab) {
+                    tabTitles.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = { Text(title) }
+                        )
+                    }
+                }
+                // WATERMARK FOOTER
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        text = "🚀 Aplikasi ini di-build oleh Dede Fathu",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
             }
@@ -94,15 +121,16 @@ fun MainScreen() {
                 7 -> StorageScreen()
                 8 -> StatsScreen()
                 9 -> {
-                    // TAB 9: PENGATURAN & MULTI-ACCOUNT MANAGER
+                    // TAB PENGATURAN & MULTI-AKUN YANG BERSIH & RAPI
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(16.dp)
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         item {
-                            Text("⚙️ Pengaturan Server & Akun", style = MaterialTheme.typography.titleLarge)
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Text("⚙️ Pengaturan Server & Akun", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(6.dp))
 
                             OutlinedTextField(
                                 value = backendUrl,
@@ -112,19 +140,20 @@ fun MainScreen() {
                                     ApiClient.updateBaseUrl(it)
                                 },
                                 label = { Text("URL Worker Backend (Pusat)") },
+                                singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Divider()
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
+                            HorizontalDivider()
+                            Spacer(modifier = Modifier.height(10.dp))
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Daftar Akun Cloudflare", style = MaterialTheme.typography.titleMedium)
+                                Text("Daftar Akun Cloudflare (${accounts.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 Button(onClick = {
                                     newAlias = "Akun ${accounts.size + 1}"
                                     newEmail = ""
@@ -134,13 +163,13 @@ fun MainScreen() {
                                     Text("➕ Tambah Akun")
                                 }
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                "Klik salah satu kartu akun di bawah untuk mengaktifkannya:",
+                                "Ketuk salah satu kartu akun untuk mengaktifkannya:",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
                         }
 
                         itemsIndexed(accounts) { index, acc ->
@@ -148,7 +177,6 @@ fun MainScreen() {
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
                                     .clickable {
                                         activeIdx = index
                                         storage.setActiveIndex(index)
@@ -157,19 +185,48 @@ fun MainScreen() {
                                     },
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                                )
+                                ),
+                                shape = RoundedCornerShape(10.dp)
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = if (isSelected) "✔ ${acc.alias} [AKTIF]" else acc.alias,
                                             style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
                                             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                         )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "Email: ${acc.email.ifBlank { "(Kosong)" }}",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                        Text(
+                                            text = "Key: ${if (acc.apiKey.length > 8) acc.apiKey.take(8) + "••••••••" else "(Kosong)"}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        // Tombol Edit Dialog
+                                        IconButton(onClick = {
+                                            editTargetIdx = index
+                                            editAlias = acc.alias
+                                            editEmail = acc.email
+                                            editApiKey = acc.apiKey
+                                            showEditDialog = true
+                                        }) {
+                                            Text("✏️")
+                                        }
+
+                                        // Tombol Hapus Akun
                                         if (accounts.size > 1) {
                                             IconButton(onClick = {
                                                 val updated = accounts.toMutableList().apply { removeAt(index) }
@@ -187,79 +244,23 @@ fun MainScreen() {
                                             }
                                         }
                                     }
-                                    Text(
-                                        text = "Email: ${acc.email.ifBlank { "(Kosong)" }}",
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                    Text(
-                                        text = "Key: ${if (acc.apiKey.length > 8) acc.apiKey.take(8) + "••••••••" else "(Kosong)"}",
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
                                 }
                             }
                         }
-
-                        item {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Divider()
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Text("Edit Rincian Akun Terpilih (${activeAccount.alias}):", style = MaterialTheme.typography.titleMedium)
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            OutlinedTextField(
-                                value = activeAccount.alias,
-                                onValueChange = { newName ->
-                                    val list = accounts.toMutableList()
-                                    list[activeIdx] = list[activeIdx].copy(alias = newName)
-                                    accounts = list
-                                    storage.saveAccounts(list)
-                                },
-                                label = { Text("Nama Alias Akun") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            OutlinedTextField(
-                                value = activeAccount.email,
-                                onValueChange = { newEmail ->
-                                    val list = accounts.toMutableList()
-                                    list[activeIdx] = list[activeIdx].copy(email = newEmail.trim())
-                                    accounts = list
-                                    storage.saveAccounts(list)
-                                    AppConfig.activeEmail = newEmail.trim()
-                                },
-                                label = { Text("Email Cloudflare") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            OutlinedTextField(
-                                value = activeAccount.apiKey,
-                                onValueChange = { newKey ->
-                                    val list = accounts.toMutableList()
-                                    list[activeIdx] = list[activeIdx].copy(apiKey = newKey.trim())
-                                    accounts = list
-                                    storage.saveAccounts(list)
-                                    AppConfig.activeApiKey = newKey.trim()
-                                },
-                                label = { Text("Global API Key (Bukan Token cfk_...)") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
                     }
 
-                    // Dialog Tambah Akun Baru
+                    // DIALOG TAMBAH AKUN BARU
                     if (showAddDialog) {
                         AlertDialog(
                             onDismissRequest = { showAddDialog = false },
-                            title = { Text("Tambah Akun Baru") },
+                            title = { Text("Tambah Akun Baru", fontWeight = FontWeight.Bold) },
                             text = {
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     OutlinedTextField(
                                         value = newAlias,
                                         onValueChange = { newAlias = it },
                                         label = { Text("Nama Alias (cth: Akun 2)") },
+                                        singleLine = true,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
@@ -267,6 +268,7 @@ fun MainScreen() {
                                         value = newEmail,
                                         onValueChange = { newEmail = it.trim() },
                                         label = { Text("Email Cloudflare") },
+                                        singleLine = true,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
@@ -286,7 +288,6 @@ fun MainScreen() {
                                         list.add(newAcc)
                                         accounts = list
                                         storage.saveAccounts(list)
-                                        // Langsung beralih ke akun yang baru dibuat
                                         activeIdx = list.size - 1
                                         storage.setActiveIndex(activeIdx)
                                         AppConfig.activeEmail = newAcc.email
@@ -299,6 +300,64 @@ fun MainScreen() {
                             },
                             dismissButton = {
                                 TextButton(onClick = { showAddDialog = false }) {
+                                    Text("Batal")
+                                }
+                            }
+                        )
+                    }
+
+                    // DIALOG EDIT AKUN
+                    if (showEditDialog && editTargetIdx in accounts.indices) {
+                        AlertDialog(
+                            onDismissRequest = { showEditDialog = false },
+                            title = { Text("Edit Akun: $editAlias", fontWeight = FontWeight.Bold) },
+                            text = {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    OutlinedTextField(
+                                        value = editAlias,
+                                        onValueChange = { editAlias = it },
+                                        label = { Text("Nama Alias") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    OutlinedTextField(
+                                        value = editEmail,
+                                        onValueChange = { editEmail = it.trim() },
+                                        label = { Text("Email Cloudflare") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    OutlinedTextField(
+                                        value = editApiKey,
+                                        onValueChange = { editApiKey = it.trim() },
+                                        label = { Text("Global API Key") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                Button(onClick = {
+                                    val list = accounts.toMutableList()
+                                    list[editTargetIdx] = list[editTargetIdx].copy(
+                                        alias = editAlias,
+                                        email = editEmail,
+                                        apiKey = editApiKey
+                                    )
+                                    accounts = list
+                                    storage.saveAccounts(list)
+                                    if (editTargetIdx == activeIdx) {
+                                        AppConfig.activeEmail = editEmail
+                                        AppConfig.activeApiKey = editApiKey
+                                    }
+                                    showEditDialog = false
+                                }) {
+                                    Text("Simpan")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showEditDialog = false }) {
                                     Text("Batal")
                                 }
                             }

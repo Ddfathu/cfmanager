@@ -1,10 +1,8 @@
 package com.cf.manager.ui.screens
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,26 +38,38 @@ fun WorkerEditorScreen() {
     val email = AppConfig.activeEmail.ifBlank { currAcc?.email ?: "" }
     val apiKey = AppConfig.activeApiKey.ifBlank { currAcc?.apiKey ?: "" }
 
-    var workerList by remember { mutableStateOf<List<String>>(emptyList()) }
-    var selectedWorker by remember { mutableStateOf("") }
-    var workerNameInput by remember { mutableStateOf("") }
-    var codeInput by remember { mutableStateOf("export default {\n  async fetch(request, env) {\n    return new Response(\"Hello from CF Worker!\");\n  }\n};") }
-    var rawUrlInput by remember { mutableStateOf("https://raw.ddfathu.cc.cd/raw/4qmj2d/nauticamodv8") }
+    // Sub-tab: 0 = Daftar & Edit Worker, 1 = Buat Worker Baru
+    var selectedWorkerTab by remember { mutableStateOf(0) }
 
-    // State Domain Rute Worker
+    var workerList by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isLoadingList by remember { mutableStateOf(false) }
+    var statusMsg by remember { mutableStateOf("") }
+
+    // State untuk Form Edit Worker
+    var editingWorkerName by remember { mutableStateOf<String?>(null) }
+    var editCodeInput by remember { mutableStateOf("") }
+    var isFetchingEditCode by remember { mutableStateOf(false) }
+    var isUpdatingWorker by remember { mutableStateOf(false) }
+
+    // State untuk Form Buat Worker Baru
+    var newWorkerName by remember { mutableStateOf("") }
+    var newWorkerCode by remember { mutableStateOf("export default {\n  async fetch(request, env) {\n    return new Response(\"Hello from new CF Worker!\");\n  }\n};") }
+    var newRawUrl by remember { mutableStateOf("https://raw.ddfathu.cc.cd/raw/4qmj2d/nauticamodv8") }
+    var isFetchingNewRaw by remember { mutableStateOf(false) }
+    var isCreatingWorker by remember { mutableStateOf(false) }
+
+    // State Domain / Rute Worker
     var zones by remember { mutableStateOf<List<ZoneItem>>(emptyList()) }
     var selectedZone by remember { mutableStateOf<ZoneItem?>(null) }
     var zoneExpanded by remember { mutableStateOf(false) }
     var customSubdomainInput by remember { mutableStateOf("") }
     var workerDomains by remember { mutableStateOf<List<WorkerDomainItem>>(emptyList()) }
     var isAddingDomain by remember { mutableStateOf(false) }
+    var activeDomainWorkerTarget by remember { mutableStateOf("") }
 
-    var statusMsg by remember { mutableStateOf("") }
-    var isLoadingList by remember { mutableStateOf(false) }
-    var isDeploying by remember { mutableStateOf(false) }
-    var isFetchingCode by remember { mutableStateOf(false) }
-    var isFetchingRaw by remember { mutableStateOf(false) }
+    // State Dialog Konfirmasi Hapus
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var workerToDelete by remember { mutableStateOf("") }
 
     val scope = rememberCoroutineScope()
 
@@ -89,21 +99,12 @@ fun WorkerEditorScreen() {
         }
         scope.launch {
             isLoadingList = true
-            statusMsg = "Memuat data worker & zone..."
             try {
                 val res = ApiClient.api.listWorkers(email, apiKey)
                 if (res.isSuccessful) {
-                    val list = res.body() ?: emptyList()
-                    workerList = list
-                    if (list.isNotEmpty()) {
-                        statusMsg = "✅ Ditemukan ${list.size} worker."
-                        if (selectedWorker.isEmpty()) {
-                            selectedWorker = list[0]
-                            workerNameInput = list[0]
-                        }
-                    } else {
-                        statusMsg = "Belum ada worker di akun ini. Buat baru di bawah!"
-                    }
+                    workerList = res.body() ?: emptyList()
+                } else {
+                    statusMsg = "Gagal memuat worker: HTTP ${res.code()}"
                 }
 
                 val zRes = ApiClient.api.listZones(email, apiKey)
@@ -142,351 +143,427 @@ fun WorkerEditorScreen() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("⚡ Worker Manager & Editor", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("Kelola script worker, routing domain & deploy", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text("⚡ Cloudflare Workers", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("Kelola script worker dan rute domain", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
                 IconButton(onClick = { loadWorkers() }, enabled = !isLoadingList) {
                     Text(if (isLoadingList) "⏳" else "🔄")
                 }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // SUB-TAB SWITCHER MANDIRI (Daftar & Edit VS Buat Baru)
+            PrimaryTabRow(selectedTabIndex = selectedWorkerTab) {
+                Tab(
+                    selected = selectedWorkerTab == 0,
+                    onClick = { selectedWorkerTab = 0 },
+                    text = { Text("📋 Daftar & Edit (${workerList.size})", fontWeight = FontWeight.SemiBold) }
+                )
+                Tab(
+                    selected = selectedWorkerTab == 1,
+                    onClick = {
+                        selectedWorkerTab = 1
+                        editingWorkerName = null
+                    },
+                    text = { Text("➕ Buat Worker Baru", fontWeight = FontWeight.SemiBold) }
+                )
+            }
         }
 
-        // --- 2. LIST WORKER (CHIPS) ---
-        item {
-            Text("Daftar Worker Tersedia (${workerList.size}):", style = MaterialTheme.typography.labelMedium)
-            Spacer(modifier = Modifier.height(4.dp))
+        // --- SUB-TAB 0: DAFTAR & EDIT WORKER YANG SUDAH ADA ---
+        if (selectedWorkerTab == 0) {
+            // MODE SEDANG EDIT SATU WORKER
+            if (editingWorkerName != null) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("✏️ Edit Worker: $editingWorkerName", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                TextButton(onClick = { editingWorkerName = null }) {
+                                    Text("✖ Tutup Editor")
+                                }
+                            }
 
-            if (workerList.isEmpty()) {
-                Text(
-                    text = if (isLoadingList) "Sedang mengambil data..." else "Tidak ada worker / belum dimuat.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text("Script JavaScript (Worker Engine):", style = MaterialTheme.typography.labelMedium)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = editCodeInput,
+                                onValueChange = { editCodeInput = it },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(260.dp),
+                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace)
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = {
+                                        val target = editingWorkerName ?: return@Button
+                                        scope.launch {
+                                            isUpdatingWorker = true
+                                            statusMsg = "Memperbarui kode worker '$target'..."
+                                            try {
+                                                val res = ApiClient.api.deployWorker(email, apiKey, target, editCodeInput)
+                                                if (res.isSuccessful && res.body()?.success == true) {
+                                                    statusMsg = "🎉 Berhasil memperbarui worker: $target"
+                                                    editingWorkerName = null
+                                                    loadWorkers()
+                                                } else {
+                                                    statusMsg = "Gagal: ${res.body()?.msg ?: res.message()}"
+                                                }
+                                            } catch (e: Exception) {
+                                                statusMsg = "Error: ${e.message}"
+                                            } finally {
+                                                isUpdatingWorker = false
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    enabled = !isUpdatingWorker
+                                ) {
+                                    Text(if (isUpdatingWorker) "Menyimpan..." else "💾 Simpan Pembaruan")
+                                }
+
+                                OutlinedButton(onClick = { editingWorkerName = null }) {
+                                    Text("Batal")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // SECTION PASANG DOMAIN KE WORKER
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    workerList.forEach { wName ->
-                        FilterChip(
-                            selected = (selectedWorker == wName),
-                            onClick = {
-                                selectedWorker = wName
-                                workerNameInput = wName
-                            },
-                            label = { Text(wName) }
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text("🌐 Hubungkan Worker ke Custom Domain", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = activeDomainWorkerTarget,
+                            onValueChange = { activeDomainWorkerTarget = it.lowercase().trim() },
+                            label = { Text("Worker Target (Ketik / Klik nama worker di bawah)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
                         )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (zones.size > 1) {
+                            ExposedDropdownMenuBox(
+                                expanded = zoneExpanded,
+                                onExpandedChange = { zoneExpanded = !zoneExpanded }
+                            ) {
+                                OutlinedTextField(
+                                    value = selectedZone?.name ?: "Pilih Domain",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Domain Utama") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = zoneExpanded) },
+                                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = zoneExpanded,
+                                    onDismissRequest = { zoneExpanded = false }
+                                ) {
+                                    zones.forEach { z ->
+                                        DropdownMenuItem(
+                                            text = { Text(z.name) },
+                                            onClick = {
+                                                selectedZone = z
+                                                zoneExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = customSubdomainInput,
+                                onValueChange = { customSubdomainInput = it.lowercase().trim() },
+                                label = { Text("Subdomain (cth: vpn / api / @)") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = ".${selectedZone?.name ?: "domain.com"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Button(
+                            onClick = {
+                                val target = activeDomainWorkerTarget.trim().lowercase()
+                                val z = selectedZone
+                                if (target.isBlank() || z == null) {
+                                    statusMsg = "Isi nama worker target dan pilih domain!"
+                                    return@Button
+                                }
+                                scope.launch {
+                                    isAddingDomain = true
+                                    statusMsg = "Menghubungkan domain ke Worker..."
+                                    try {
+                                        val sub = if (customSubdomainInput == "@") "" else customSubdomainInput
+                                        val res = ApiClient.api.addWorkerDomain(email, apiKey, target, sub, z.name, z.id)
+                                        statusMsg = res.body()?.msg ?: "Domain rute berhasil dipasang!"
+                                        customSubdomainInput = ""
+                                        loadWorkerDomains()
+                                    } catch (e: Exception) {
+                                        statusMsg = "Error: ${e.message}"
+                                    } finally {
+                                        isAddingDomain = false
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isAddingDomain && activeDomainWorkerTarget.isNotBlank() && selectedZone != null
+                        ) {
+                            Text(if (isAddingDomain) "Menghubungkan..." else "🔗 Pasang Domain Rute")
+                        }
+                    }
+                }
+            }
+
+            // LIST KARTU WORKER YANG SUDAH ADA
+            item {
+                Text("Daftar Worker Aktif (${workerList.size}):", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+
+            if (workerList.isEmpty() && !isLoadingList) {
+                item {
+                    Text("Belum ada worker di akun ini. Pindah ke tab '➕ Buat Worker Baru' di atas untuk membuat!", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+            }
+
+            items(items = workerList, key = { it }) { wName ->
+                val linkedRoutes = workerDomains.filter { it.service == wName }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("⚡ $wName", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                if (linkedRoutes.isNotEmpty()) {
+                                    Text(
+                                        text = "🌐 ${linkedRoutes.joinToString { it.hostname }}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                } else {
+                                    Text("Belum terhubung custom domain", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Tombol Edit Script
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        statusMsg = "Mengambil kode worker '$wName'..."
+                                        try {
+                                            val call = ApiClient.api.getWorkerCode(email, apiKey, wName)
+                                            if (call.isSuccessful) {
+                                                editCodeInput = call.body()?.string() ?: ""
+                                                editingWorkerName = wName
+                                                statusMsg = "Kode worker '$wName' siap diedit di atas!"
+                                            } else {
+                                                statusMsg = "Gagal mengambil kode: HTTP ${call.code()}"
+                                            }
+                                        } catch (e: Exception) {
+                                            statusMsg = "Error: ${e.message}"
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Text("✏️ Edit Script")
+                            }
+
+                            // Tombol Pilih untuk Rute Domain
+                            OutlinedButton(
+                                onClick = {
+                                    activeDomainWorkerTarget = wName
+                                    statusMsg = "Worker '$wName' dipilih untuk pasang domain."
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Text("🌐 Rute")
+                            }
+
+                            // Tombol Hapus Worker
+                            Button(
+                                onClick = {
+                                    workerToDelete = wName
+                                    showDeleteConfirm = true
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Text("🗑")
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // --- 3. EDITOR & AKSI WORKER ---
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text("🛠 Konfigurasi Worker", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(8.dp))
+        // --- SUB-TAB 1: FORM BUAT WORKER BARU DARI NOL ---
+        if (selectedWorkerTab == 1) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text("🚀 Formulir Buat Worker Baru", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Isi nama dan script worker yang ingin kamu pasang", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
 
-                    OutlinedTextField(
-                        value = workerNameInput,
-                        onValueChange = {
-                            workerNameInput = it.lowercase().trim()
-                            if (it != selectedWorker) selectedWorker = ""
-                        },
-                        label = { Text("Nama Worker Target") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = newWorkerName,
+                            onValueChange = { newWorkerName = it.lowercase().trim() },
+                            label = { Text("Nama Worker Baru (cth: proxy-v2ray / test-api)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Ambil template RAW dari URL
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = newRawUrl,
+                                onValueChange = { newRawUrl = it.trim() },
+                                label = { Text("URL Raw GitHub (Template / Preset)") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Button(
+                                onClick = {
+                                    if (newRawUrl.isBlank()) return@Button
+                                    scope.launch {
+                                        isFetchingNewRaw = true
+                                        statusMsg = "Mengunduh script dari URL..."
+                                        try {
+                                            val content = withContext(Dispatchers.IO) { URL(newRawUrl).readText() }
+                                            newWorkerCode = content
+                                            statusMsg = "✅ Template RAW berhasil dimasukkan ke editor!"
+                                        } catch (e: Exception) {
+                                            statusMsg = "Gagal ambil RAW: ${e.message}"
+                                        } finally {
+                                            isFetchingNewRaw = false
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.padding(top = 4.dp),
+                                enabled = !isFetchingNewRaw && newRawUrl.isNotBlank()
+                            ) {
+                                Text(if (isFetchingNewRaw) "..." else "Tarik")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text("Script JavaScript Worker Engine:", style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = newWorkerCode,
+                            onValueChange = { newWorkerCode = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(260.dp),
+                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace)
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
                         Button(
                             onClick = {
-                                val target = workerNameInput.trim().lowercase()
-                                if (target.isBlank()) return@Button
+                                val target = newWorkerName.trim().lowercase()
+                                if (target.isBlank()) {
+                                    statusMsg = "⚠️ Berikan nama untuk worker barumu!"
+                                    return@Button
+                                }
                                 scope.launch {
-                                    isFetchingCode = true
-                                    statusMsg = "Mengambil kode worker '$target'..."
+                                    isCreatingWorker = true
+                                    statusMsg = "Mendeploy worker baru '$target' ke Cloudflare..."
                                     try {
-                                        val call = ApiClient.api.getWorkerCode(email, apiKey, target)
-                                        if (call.isSuccessful) {
-                                            val fetchedCode = call.body()?.string() ?: ""
-                                            if (fetchedCode.isNotBlank()) {
-                                                codeInput = fetchedCode
-                                                statusMsg = "✅ Kode worker '$target' berhasil ditarik!"
-                                            }
+                                        val res = ApiClient.api.deployWorker(email, apiKey, target, newWorkerCode)
+                                        if (res.isSuccessful && res.body()?.success == true) {
+                                            statusMsg = "🎉 Berhasil membuat worker baru: $target!"
+                                            newWorkerName = ""
+                                            selectedWorkerTab = 0 // Pindah ke tab daftar worker
+                                            loadWorkers()
                                         } else {
-                                            statusMsg = "Gagal HTTP ${call.code()} saat tarik kode."
+                                            statusMsg = "Gagal deploy: ${res.body()?.msg ?: res.message()}"
                                         }
                                     } catch (e: Exception) {
                                         statusMsg = "Error: ${e.message}"
                                     } finally {
-                                        isFetchingCode = false
+                                        isCreatingWorker = false
                                     }
                                 }
                             },
-                            modifier = Modifier.weight(1f),
-                            enabled = !isFetchingCode && workerNameInput.isNotBlank()
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isCreatingWorker && newWorkerName.isNotBlank()
                         ) {
-                            Text(if (isFetchingCode) "..." else "📥 Tarik Kode")
-                        }
-
-                        Button(
-                            onClick = {
-                                if (workerNameInput.isBlank()) return@Button
-                                showDeleteConfirm = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.weight(1f),
-                            enabled = workerNameInput.isNotBlank()
-                        ) {
-                            Text("🗑 Hapus")
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = rawUrlInput,
-                            onValueChange = { rawUrlInput = it.trim() },
-                            label = { Text("URL Raw GitHub / Preset") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Button(
-                            onClick = {
-                                if (rawUrlInput.isBlank()) return@Button
-                                scope.launch {
-                                    isFetchingRaw = true
-                                    statusMsg = "Mengunduh script raw..."
-                                    try {
-                                        val content = withContext(Dispatchers.IO) { URL(rawUrlInput).readText() }
-                                        codeInput = content
-                                        statusMsg = "✅ Berhasil memuat script RAW!"
-                                    } catch (e: Exception) {
-                                        statusMsg = "Gagal fetch RAW: ${e.message}"
-                                    } finally {
-                                        isFetchingRaw = false
-                                    }
-                                }
-                            },
-                            modifier = Modifier.padding(top = 4.dp),
-                            enabled = !isFetchingRaw && rawUrlInput.isNotBlank()
-                        ) {
-                            Text(if (isFetchingRaw) "..." else "Tarik")
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text("Script JavaScript (Worker Engine):", style = MaterialTheme.typography.labelMedium)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = codeInput,
-                        onValueChange = { codeInput = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp),
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace)
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Button(
-                        onClick = {
-                            val target = workerNameInput.trim().lowercase()
-                            if (target.isBlank()) {
-                                statusMsg = "Nama target worker tidak boleh kosong!"
-                                return@Button
-                            }
-                            scope.launch {
-                                isDeploying = true
-                                statusMsg = "Mendeploy ke Cloudflare..."
-                                try {
-                                    val res = ApiClient.api.deployWorker(email, apiKey, target, codeInput)
-                                    if (res.isSuccessful && res.body()?.success == true) {
-                                        statusMsg = "🎉 Berhasil deploy: ${res.body()?.worker_url ?: target}"
-                                        loadWorkers()
-                                    } else {
-                                        statusMsg = "Gagal deploy: ${res.body()?.msg ?: res.message()}"
-                                    }
-                                } catch (e: Exception) {
-                                    statusMsg = "Error: ${e.message}"
-                                } finally {
-                                    isDeploying = false
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isDeploying && workerNameInput.isNotBlank()
-                    ) {
-                        Text(if (isDeploying) "Mendeploy..." else "🚀 Deploy / Simpan Worker")
-                    }
-                }
-            }
-        }
-
-        // --- 4. CUSTOM DOMAIN & ROUTE WORKER ---
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text("🌐 Custom Domain & Rute Worker", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text("Hubungkan Worker '${workerNameInput.ifBlank { "(Pilih Worker)" }}' ke Domain Kustom", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    if (zones.size > 1) {
-                        ExposedDropdownMenuBox(
-                            expanded = zoneExpanded,
-                            onExpandedChange = { zoneExpanded = !zoneExpanded }
-                        ) {
-                            OutlinedTextField(
-                                value = selectedZone?.name ?: "Pilih Domain",
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Pilih Domain Cloudflare") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = zoneExpanded) },
-                                modifier = Modifier
-                                    .menuAnchor()
-                                    .fillMaxWidth()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = zoneExpanded,
-                                onDismissRequest = { zoneExpanded = false }
-                            ) {
-                                zones.forEach { z ->
-                                    DropdownMenuItem(
-                                        text = { Text(z.name) },
-                                        onClick = {
-                                            selectedZone = z
-                                            zoneExpanded = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = customSubdomainInput,
-                            onValueChange = { customSubdomainInput = it.lowercase().trim() },
-                            label = { Text("Subdomain") },
-                            placeholder = { Text("cth: api / vpn / @" ) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = ".${selectedZone?.name ?: "domain.com"}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Button(
-                        onClick = {
-                            val target = workerNameInput.trim().lowercase()
-                            val z = selectedZone
-                            if (target.isBlank() || z == null) {
-                                statusMsg = "Pilih worker dan domain terlebih dahulu!"
-                                return@Button
-                            }
-                            scope.launch {
-                                isAddingDomain = true
-                                statusMsg = "Menghubungkan domain ke Worker..."
-                                try {
-                                    val sub = if (customSubdomainInput == "@") "" else customSubdomainInput
-                                    val res = ApiClient.api.addWorkerDomain(email, apiKey, target, sub, z.name, z.id)
-                                    statusMsg = res.body()?.msg ?: "Domain rute berhasil dipasang!"
-                                    customSubdomainInput = ""
-                                    loadWorkerDomains()
-                                } catch (e: Exception) {
-                                    statusMsg = "Error: ${e.message}"
-                                } finally {
-                                    isAddingDomain = false
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isAddingDomain && workerNameInput.isNotBlank() && selectedZone != null
-                    ) {
-                        Text(if (isAddingDomain) "Menghubungkan..." else "🔗 Pasang Domain Rute")
-                    }
-                }
-            }
-        }
-
-        // --- 5. DAFTAR DOMAIN WORKER AKTIF ---
-        val matchedDomains = workerDomains.filter { it.service == workerNameInput }
-        if (matchedDomains.isNotEmpty()) {
-            item {
-                Text("Domain Terhubung ke '${workerNameInput}':", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            }
-
-            items(items = matchedDomains, key = { it.id }) { d: WorkerDomainItem ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("🔗 ${d.hostname}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                            Text("Service: ${d.service}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                        }
-                        IconButton(onClick = {
-                            scope.launch {
-                                statusMsg = "Mencopot domain rute..."
-                                try {
-                                    val res = ApiClient.api.deleteWorkerDomain(d.id, email, apiKey)
-                                    if (res.isSuccessful) {
-                                        statusMsg = "🗑 Domain rute dicopot!"
-                                        loadWorkerDomains()
-                                    }
-                                } catch (e: Exception) {
-                                    statusMsg = "Error: ${e.message}"
-                                }
-                            }
-                        }) {
-                            Text("🗑")
+                            Text(if (isCreatingWorker) "Sedang Membuat..." else "🚀 Deploy Worker Baru Sekarang")
                         }
                     }
                 }
             }
         }
 
-        // --- 6. STATUS BOX ---
+        // --- STATUS BOX ---
         if (statusMsg.isNotEmpty()) {
             item {
                 Card(
@@ -504,22 +581,21 @@ fun WorkerEditorScreen() {
     }
 
     // --- DIALOG KONFIRMASI HAPUS WORKER ---
-    if (showDeleteConfirm) {
+    if (showDeleteConfirm && workerToDelete.isNotBlank()) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("Konfirmasi Hapus") },
-            text = { Text("Yakin ingin menghapus worker '${workerNameInput}' secara permanen?") },
+            text = { Text("Yakin ingin menghapus worker '$workerToDelete' secara permanen dari akun Cloudflare?") },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
                     scope.launch {
-                        statusMsg = "Menghapus worker '${workerNameInput}'..."
+                        statusMsg = "Menghapus worker '$workerToDelete'..."
                         try {
-                            val res = ApiClient.api.deleteWorker(email, apiKey, workerNameInput)
+                            val res = ApiClient.api.deleteWorker(email, apiKey, workerToDelete)
                             if (res.isSuccessful && res.body()?.success == true) {
-                                statusMsg = "🗑 Worker '${workerNameInput}' berhasil dihapus!"
-                                workerNameInput = ""
-                                selectedWorker = ""
+                                statusMsg = "🗑 Worker '$workerToDelete' berhasil dihapus!"
+                                if (editingWorkerName == workerToDelete) editingWorkerName = null
                                 loadWorkers()
                             } else {
                                 statusMsg = "Gagal menghapus: ${res.body()?.msg ?: res.message()}"

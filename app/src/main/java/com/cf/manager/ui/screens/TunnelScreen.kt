@@ -8,11 +8,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -118,7 +121,8 @@ fun TunnelScreen() {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text("➕ Buat Tunnel Baru", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
@@ -172,7 +176,8 @@ fun TunnelScreen() {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(
@@ -209,7 +214,8 @@ fun TunnelScreen() {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text("🔗 Hubungkan Public Hostname (Ingress)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
@@ -219,7 +225,6 @@ fun TunnelScreen() {
                     Text("Pilih Tunnel Tujuan: ${selectedTunnel?.name ?: "(Belum dipilih)"}", fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    // Dropdown Pemilihan Zone / Domain
                     ExposedDropdownMenuBox(
                         expanded = zoneExpanded,
                         onExpandedChange = { zoneExpanded = !zoneExpanded }
@@ -329,19 +334,19 @@ fun TunnelScreen() {
             }
         }
 
-        // --- 5. DAFTAR TUNNEL CARD ---
+        // --- 5. DAFTAR TUNNEL CARD DENGAN INDIKATOR STATUS REAL-TIME ---
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Daftar Tunnel Aktif (${tunnels.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Daftar Tunnel (${tunnels.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text("Ketuk untuk memilih", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
             }
         }
 
-        if (tunnels.isEmpty()) {
+        if (tunnels.isEmpty() && !isLoading) {
             item {
                 Text("Belum ada tunnel. Buat baru di bagian atas.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
             }
@@ -349,6 +354,22 @@ fun TunnelScreen() {
 
         items(tunnels) { t ->
             val isSelected = (selectedTunnel?.id == t.id)
+            val rawStatus = (t.status ?: "inactive").lowercase()
+            val isHealthy = rawStatus == "healthy" || rawStatus == "active"
+            val isDegraded = rawStatus == "degraded"
+
+            val statusColor = when {
+                isHealthy -> Color(0xFF16A34A) // Hijau Aktif
+                isDegraded -> Color(0xFFD97706) // Kuning Degraded
+                else -> Color(0xFFDC2626) // Merah Mati/Inactive
+            }
+
+            val statusLabel = when {
+                isHealthy -> "Aktif"
+                isDegraded -> "Degraded"
+                else -> "Mati"
+            }
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -358,7 +379,7 @@ fun TunnelScreen() {
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+                Column(modifier = Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -366,22 +387,49 @@ fun TunnelScreen() {
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                             Text(if (isSelected) "✔ " else "🚇 ", style = MaterialTheme.typography.titleMedium)
-                            Column {
-                                Text(
-                                    text = t.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            Text(
+                                text = t.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        // BADGE STATUS AKTIF / MATI REAL-TIME
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = statusColor.copy(alpha = 0.15f),
+                            modifier = Modifier.padding(start = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(statusColor)
                                 )
+                                Spacer(modifier = Modifier.width(5.dp))
                                 Text(
-                                    text = "ID: ${t.id}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.outline
+                                    text = statusLabel,
+                                    color = statusColor,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "ID: ${t.id}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.outline
+                    )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -390,7 +438,6 @@ fun TunnelScreen() {
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Tombol Ambil Token
                         OutlinedButton(
                             onClick = {
                                 selectedTunnel = t
@@ -417,7 +464,6 @@ fun TunnelScreen() {
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        // Tombol Hapus Tunnel
                         Button(
                             onClick = {
                                 tunnelToDelete = t
@@ -450,7 +496,6 @@ fun TunnelScreen() {
         }
     }
 
-    // --- DIALOG KONFIRMASI HAPUS TUNNEL ---
     if (showDeleteDialog && tunnelToDelete != null) {
         val target = tunnelToDelete!!
         AlertDialog(

@@ -57,7 +57,7 @@ interface WorkerApi {
         @Header("X-Auth-Key") apiKey: String
     ): Response<JsonObject>
 
-    // WORKER VARS & BINDINGS (TEXT, SECRETS, KV, R2)
+    // WORKER VARS & BINDINGS
     @FormUrlEncoded
     @POST("list-worker-vars")
     suspend fun listWorkerVars(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("target_worker") target: String): Response<List<WorkerVarItem>>
@@ -79,7 +79,7 @@ interface WorkerApi {
         @Field("cf_email") email: String,
         @Field("cf_api_key") apiKey: String,
         @Field("target_worker") target: String,
-        @Field("binding_type") type: String, // "kv_namespace" atau "r2_bucket"
+        @Field("binding_type") type: String,
         @Field("binding_name") name: String,
         @Field("target_id") targetId: String
     ): Response<ApiResponse>
@@ -93,7 +93,7 @@ interface WorkerApi {
         @Field("var_name") name: String
     ): Response<ApiResponse>
 
-    // PAGES
+    // PAGES LENGKAP (PROJECTS & CUSTOM DOMAINS)
     @GET("api/projects")
     suspend fun listPagesProjects(@Header("X-Auth-Email") email: String, @Header("X-Auth-Key") apiKey: String): Response<JsonObject>
 
@@ -108,12 +108,27 @@ interface WorkerApi {
         @Body payload: Map<String, String>
     ): Response<ApiResponse>
 
+    @GET("api/projects/{project}/domains")
+    suspend fun listPagesCustomDomains(
+        @Path("project") project: String,
+        @Header("X-Auth-Email") email: String,
+        @Header("X-Auth-Key") apiKey: String
+    ): Response<JsonObject>
+
     @POST("api/projects/{project}/domains")
     suspend fun addPagesCustomDomain(
         @Path("project") project: String,
         @Header("X-Auth-Email") email: String,
         @Header("X-Auth-Key") apiKey: String,
         @Body payload: Map<String, String>
+    ): Response<JsonObject>
+
+    @DELETE("api/projects/{project}/domains/{domain_name}")
+    suspend fun deletePagesCustomDomain(
+        @Path("project") project: String,
+        @Path("domain_name") domainName: String,
+        @Header("X-Auth-Email") email: String,
+        @Header("X-Auth-Key") apiKey: String
     ): Response<JsonObject>
 
     @DELETE("api/projects/{project}")
