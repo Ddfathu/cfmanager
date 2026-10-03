@@ -1,5 +1,7 @@
 package com.cf.manager.data.model
 
+import com.google.gson.JsonElement
+
 data class CfAccount(
     val id: String = java.util.UUID.randomUUID().toString(),
     val alias: String,
@@ -14,6 +16,7 @@ data class ApiResponse(
     val worker_url: String? = null,
     val token: String? = null,
     val tunnel_id: String? = null,
+    val text: String? = null,
     val name_servers: List<String>? = null
 )
 
@@ -69,4 +72,10 @@ data class WorkerVarItem(
 data class VisitorStats(
     val totalHits: Int = 0,
     val onlineCount: Int = 0
+)
+
+data class D1QueryResponse(
+    val success: Boolean = false,
+    val result: JsonElement? = null,
+    val errors: List<Map<String, Any>>? = null
 )

@@ -73,6 +73,16 @@ interface WorkerApi {
     suspend fun deleteDns(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("zone_id") zoneId: String, @Field("record_id") recordId: String): Response<ApiResponse>
 
     @FormUrlEncoded
+    @POST("update-ssl-settings")
+    suspend fun updateSslSettings(
+        @Field("cf_email") email: String,
+        @Field("cf_api_key") apiKey: String,
+        @Field("zone_id") zoneId: String,
+        @Field("ssl_mode") sslMode: String,
+        @Field("always_use_https") alwaysHttps: String
+    ): Response<ApiResponse>
+
+    @FormUrlEncoded
     @POST("order-ca-cert")
     suspend fun orderCaCert(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("zone_id") zoneId: String, @Field("ca_type") caType: String): Response<ApiResponse>
 
@@ -153,7 +163,7 @@ interface WorkerApi {
 
     @FormUrlEncoded
     @POST("read-r2-object-text")
-    suspend fun readR2ObjectText(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("bucket_name") bucket: String, @Field("object_key") key: String): Response<Map<String, Any>>
+    suspend fun readR2ObjectText(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("bucket_name") bucket: String, @Field("object_key") key: String): Response<ApiResponse>
 
     @FormUrlEncoded
     @POST("list-d1-databases")
@@ -161,7 +171,7 @@ interface WorkerApi {
 
     @FormUrlEncoded
     @POST("execute-d1-query")
-    suspend fun executeD1Query(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("database_id") dbId: String, @Field("sql_query") sql: String): Response<Any>
+    suspend fun executeD1Query(@Field("cf_email") email: String, @Field("cf_api_key") apiKey: String, @Field("database_id") dbId: String, @Field("sql_query") sql: String): Response<D1QueryResponse>
 
     @GET("get-visitor-stats")
     suspend fun getVisitorStats(): Response<VisitorStats>
